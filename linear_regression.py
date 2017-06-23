@@ -1,5 +1,5 @@
 import numpy as np
-class linear_regression1:
+class linear_regression:
 
     def __init__(self,batch_size=0,epochs=100,learning_rate=0.001,tolerance=0.00001,show_progress=True):
 
