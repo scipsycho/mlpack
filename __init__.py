@@ -1,5 +1,5 @@
-from mlpack.linear_regression import linear_regression
-from mlpack.logistic_regression import logistic_regression
+from mlpack import linear_regression
+from mlpack import logistic_regression
 
 """
 MlPack
