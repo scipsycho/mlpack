@@ -1,6 +1,6 @@
 from mlpack.linear_regression import linear_regression
 from mlpack.logistic_regression import logistic_regression
-
+from mlpack.neural_network  import n_ff_network
 """
 MlPack
 ======
