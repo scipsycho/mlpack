@@ -164,7 +164,7 @@ class n_ff_network:
         self.learning_algos = {}
         self.learning_algos['hebb'] = self.hebb_learn
         self.learning_algos['perceptron'] = self.perceptron_learn
-        #self.learning_algos['delta'] = self.delta_learn
+        self.learning_algos['delta'] = self.delta_learn
         #self.learning_algos['backprop'] = self.backprop
         
         
@@ -272,6 +272,32 @@ class n_ff_network:
         #dot.render('./'+comment+'.png', view = True)
         dot.view()
         
+    def delta_learn(self, arg_dict):
+        
+        try:
+            output_vector = arg_dict['output_vector']
+        except KeyError:
+            logging.critical('output_vector argument not provided. Cannot Continue')
+            return None
+        
+        try:
+            learning_rate = arg_dict['learning_rate']
+        except KeyError:
+            logging.info('learning_rate argument not provided. Using default {} value'.format(1))
+            learning_rate = 1
+            
+        if self.num_layers > 2:
+            logging.critical('Delta learning rule currently doesn\'t support more than two layers. Cannot Continue')
+            return None
+        
+        input_layer = self.n_layers[0]
+        
+        for i in range(len(output_vector)):
+            t = output_vector[i]
+            for j in range(input_layer.num_nodes):
+                input_layer.weight_matrix[j][i] += learning_rate * (t - self.output_vector[i])*self.input_vector[j]
+        
+        
     def perceptron_learn(self, arg_dict):
         
         try:
@@ -373,5 +399,3 @@ class n_ff_network:
                 xargs['output_vector'] = output_matrix[j].flatten()
                 self.learning_algos[learning_algo](xargs)
         
-        
-
