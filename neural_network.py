@@ -1,9 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[1]:
-
-
 import numpy as np
 import pandas as pd
 import logging
@@ -13,7 +7,6 @@ import math
 logging.basicConfig(filename='./log.txt',level=logging.DEBUG)
 
 
-# In[2]:
 
 
 def sigmoid_bipolar(x):
@@ -37,9 +30,6 @@ def step(x,theta):
     else:
         ret = 0
     logging.debug("Step({},{}) Called: returning {}".format(x,theta,ret))
-
-
-# In[3]:
 
 
 class layer:
@@ -135,12 +125,6 @@ class layer:
                .format(self.num_nodes, self.next_num_nodes,self.weight_matrix))
 
 
-
-
-
-# In[4]:
-
-
 class n_ff_network:
 
     def __init__(self, ff_layers, initial_weights = None, has_bias = None,actn_fxn = relu):
@@ -148,6 +132,10 @@ class n_ff_network:
         self.ff_layers = list(np.array(ff_layers).flatten())
         self.num_layers = len(self.ff_layers)
 
+        if self.num_layers < 2:
+            logging.critical('Neural Network cannot have less than two layers. Cannot Continue')
+            exit()
+        
         self.n_layers = []
         
         if has_bias is None:
@@ -174,11 +162,17 @@ class n_ff_network:
         self.input_vector = None
         self.output_vector = None
         
+        #default learning algos
+        self.learning_algos = {}
+        self.learning_algos['hebb'] = self.hebb_learn
+        #self.learning_algos['perceptron'] = self.perceptron_learn
+        #self.learning_algos['delta'] = self.delta_learn
+        #self.learning_algos['backprop'] = self.backprop
 
     def send(self, input_vector):
         
         #checking if the input layer of neural network accepts the input_vector as a valid input vector
-        return_val = self.n_layers.send(input_vector)
+        return_val = self.n_layers[0].send(input_vector)
         
         if return_val is None:
             logging.critical('Input_vector incompatible. Cannot continue')
@@ -254,61 +248,60 @@ class n_ff_network:
         #dot.render('./'+comment+'.png', view = True)
         dot.view()
         
-
-
-# In[5]:
-
-
-network = n_ff_network([9,4,3,1],has_bias=[False, True, True])
-
-
-# In[6]:
-
-
-network.show_network()
-
-
-# In[ ]:
-
-
-print(1+True)
-
-
-# In[ ]:
-
-
-print(1+False)
-
-
-# In[13]:
-
-
-dot = Digraph()
-
-
-# In[14]:
-
-
-dot.node("kame",label="hame",fill="green")
-
-
-# In[3]:
-
-
-file = open('./log.txt')
-for i in file:
-    if "CRITICAL" in i:
-        print(i)
-
-
-# In[96]:
-
-
-a = dot.subgraph()
-
-
-# In[97]:
-
-
-
-
+    def hebb_learn(self,arg_dict):
+        output_vector = arg_dict['output_vector']
+        
+        #hebb only works when there are no hidden layers
+        if self.num_layers > 2:
+            logging.critical('Hebb cannot work with any hidden layers. Cannot Continue')
+            return None
+        
+        input_layer = self.n_layers[0]
+        for i in range(len(output_vector)):
+            output = output_vector[i]
+            for j in range(input_layer.num_nodes):
+                input_layer.weight_matrix[j][i] += output*self.input_vector[j]
+        
+        
+    def learn(self, learning_algo: str, input_matrix, output_matrix, epochs = 1, **xargs):
+        
+        if learning_algo not in self.learning_algos.keys():
+            logging.critical('{} learning algorithm is not recoginized. Cannot Continue')
+            return None
+        
+        input_matrix = np.array(input_matrix)
+        output_matrix = np.array(output_matrix)
+        
+        if len(input_matrix.shape) != 2 or len(output_matrix.shape) != 2:
+            logging.critical('Input and Output matrices should have only two dimensions. Cannot Continue')
+            return None
+        
+        if input_matrix.shape[0] != output_matrix.shape[0]:
+            logging.critical('Input and Output matrices have incompatible dimensions. Cannot Continue')
+            return None
+        
+        input_layer = self.n_layers[0]
+        output_layer = self.n_layers[self.num_layers-1]
+        
+        num_pairs = input_matrix.shape[0]
+        
+        if num_pairs < 1:
+            logging.critical('No input provided. Cannot Continue')
+            return None
+        
+        if input_layer.send(input_matrix[0]) is None:
+            logging.critical('Input Matrix dimensions` incompatible. Cannot Continue')
+            return None
+        
+        if output_layer.send(output_matrix[0]) is None:
+            logging.critical('Output Matrix dimensions` incompatible. Cannot Continue')
+            
+        
+        for i in range(epochs):
+            for j in range(num_pairs):
+                self.send(input_matrix[j].flatten())
+                self.generate()
+                xargs['output_vector'] = output_matrix[j].flatten()
+                self.learning_algos[learning_algo](xargs)
+        
+        
