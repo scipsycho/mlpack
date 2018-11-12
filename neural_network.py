@@ -1,3 +1,9 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[1]:
+
+
 import numpy as np
 import pandas as pd
 import logging
@@ -5,6 +11,9 @@ from graphviz import Digraph
 import math
 
 logging.basicConfig(filename='./log.txt',level=logging.DEBUG)
+
+
+# In[2]:
 
 
 def sigmoid_bipolar(x):
@@ -27,20 +36,35 @@ def step(x,theta):
         ret = -1
     else:
         ret = 0
-
     logging.debug("Step({},{}) Called: returning {}".format(x,theta,ret))
+
+
+# In[3]:
+
 
 class layer:
 
-    def __init__(self, num_nodes, next_num_nodes = 1, initial_weight = None, is_last = False, actn_fxn = relu, has_bias = False):
+    def __init__(self, num_nodes, next_num_nodes = 1, initial_weight = None, is_last = False, has_bias = False, actn_fxn = relu):
 
         self.num_nodes = num_nodes
         self.actn_fxn  = actn_fxn
         self.next_num_nodes = next_num_nodes
         self.is_last = is_last
         self.weight_matrix = None
+        self.has_bias = has_bias
 
+        #cannot have a bias in output layer
+        if self.has_bias and self.is_last:
+            logging.critical("An output layer cannot have a bias. Cannot Continue")
+            exit()
+        
+        #cannot have a bias only in a layer (it doesn't make sense)
+        if self.has_bias and self.num_nodes == 1:
+            logging.critical("A layer cannot have only one node that is a bias")
+            exit()
+        
         logging.debug("layer object initialized with \n\tNumber of nodes: {}\n\tActivation Function: {}\n\tNext Number of Nodes: {}\n\tIs Last: {}\n".format(self.num_nodes,self.actn_fxn,self.next_num_nodes,self.is_last))
+        
         if initial_weight is None:
             logging.debug('Using default values for the weight matrix')
             self.weight_matrix = np.zeros([self.num_nodes, self.next_num_nodes],dtype=float)
@@ -67,12 +91,24 @@ class layer:
         #flattened to keep things simple
         input_vector = np.array(input_vector).flatten()
 
-        if input_vector.shape != (self.num_nodes,):
+        suppossed_input_vector_size = self.num_nodes
+        
+        if self.has_bias:
+            suppossed_input_vector_size -= 1
+            
+        if input_vector.shape != (suppossed_input_vector_size,):
             logging.critical("Input vector not of desired size. Cannot continue!")
             return None
 
+        temp = []
+        if self.has_bias:
+            temp.append(1)
+        
+        for i in input_vector:
+            temp.append(self.actn_fxn(i))
         self.input_vector = np.asarray([ self.actn_fxn(i) for i in input_vector ])
 
+        return self.input_vector
 
     def generate(self):
 
@@ -100,41 +136,59 @@ class layer:
 
 
 
+
+
+# In[4]:
+
+
 class n_ff_network:
 
-    def __init__(self, ff_layers, initial_weights = None, actn_fxn = relu):
+    def __init__(self, ff_layers, initial_weights = None, has_bias = None,actn_fxn = relu):
 
         self.ff_layers = list(np.array(ff_layers).flatten())
         self.num_layers = len(self.ff_layers)
 
         self.n_layers = []
+        
+        if has_bias is None:
+            has_bias = [False for i in range(self.num_layers-1)]
+        elif np.asarray(has_bias).flatten().shape != (self.num_layers-1,):
+            logging.warning('has_bias is not of compatible size. Using default value')
+            has_bias = [False for i in range(self.num_layers-1)]
+        
         if isinstance(initial_weights,(type(None),int,float)):
             self.n_layers = [ layer(num_nodes = self.ff_layers[i], next_num_nodes= self.ff_layers[i+1],
-                                    actn_fxn = actn_fxn, initial_weight= initial_weights)
+                                    actn_fxn = actn_fxn, initial_weight= initial_weights, has_bias = has_bias[i])
                                for i in range(self.num_layers - 1)]
 
         elif initial_weights.shape[0] == self.num_layers - 1:
             self.n_layers = [ layer(num_nodes = self.ff_layers[i], next_num_nodes= self.ff_layers[i+1],
-                                    actn_fxn = actn_fxn, initial_weight= initial_weights[i])
+                                    actn_fxn = actn_fxn, initial_weight= initial_weights[i], has_bias = has_bias[i])
                                for i in range(self.num_layers - 1)]
 
         self.n_layers.append(layer(num_nodes = self.ff_layers[self.num_layers-1],initial_weight=1,
-                                       next_num_nodes=self.ff_layers[self.num_layers-1], actn_fxn = actn_fxn, is_last = True))
+                                       next_num_nodes=self.ff_layers[self.num_layers-1], actn_fxn = actn_fxn, is_last = True,
+                                  has_bias = False))
 
         self.n_layers[0].actn_fxn = identity
         self.input_vector = None
         self.output_vector = None
+        
 
     def send(self, input_vector):
+        
+        #checking if the input layer of neural network accepts the input_vector as a valid input vector
+        return_val = self.n_layers.send(input_vector)
+        
+        if return_val is None:
+            logging.critical('Input_vector incompatible. Cannot continue')
+            return None;
+        
         #flattened to keep things simple
-        input_vector = np.array(input_vector).flatten()
-
-        if input_vector.shape != (self.n_layers[0].num_nodes,):
-            logging.critical("Input vector not of desired size. Cannot continue!")
-            return None
-
-        self.input_vector = input_vector
-
+        self.input_vector = np.array(input_vector).flatten()
+        
+        return self.input_vector
+    
     def generate(self):
 
         curr_input = self.input_vector
@@ -157,12 +211,29 @@ class n_ff_network:
     def show_network(self,comment="Neural Network"):
         dot = Digraph(comment)
 
+        
+        #legend
+        dot.attr(rankdir='LR',ranksep='4')
+        dot.node(name="input_layer", rank = 'sink',xlabel="Input Layer",label="", fontsize = '12',style="filled",color="green",fixedsize = 'true', shape="square",width="0.1")
+        dot.node(name="output_layer", xlabel="Output Layer",label="", fontsize = '12',style="filled",color="red",fixedsize = 'true', shape="square",width="0.1")
+        dot.node(name="hidden_layers", xlabel="Hidden Layers",label="", fontsize = '12',style="filled",color="grey",fixedsize = 'true', shape="square",width="0.1")
+        
         start = 0
-
         for i in range(self.num_layers):
-            for j in range(self.n_layers[i].num_nodes):
-                dot.node(name = str(start),label = 'x'+str(i)+str(j))
-                start +=1
+            color = "grey"
+            if i == 0:
+                color = "green"
+            elif i == self.num_layers - 1:
+                color = "red"
+                
+            with dot.subgraph(name = 'cluster_'+str(i)) as subdot:
+                for j in range(self.n_layers[i].num_nodes):
+                    label_name = 'x' + str(i) + str(j)
+                    if self.n_layers[i].has_bias and j == 0:
+                        label_name = '1'
+                
+                    subdot.node(name = str(start),label = label_name,color=color, style="filled",rankdir='TB')
+                    start +=1
 
         start = 0
         for i in range(self.num_layers-1):
@@ -180,4 +251,64 @@ class n_ff_network:
 
             start = next_start
 
-        dot.render('./'+comment+'.png', view = True)
+        #dot.render('./'+comment+'.png', view = True)
+        dot.view()
+        
+
+
+# In[5]:
+
+
+network = n_ff_network([9,4,3,1],has_bias=[False, True, True])
+
+
+# In[6]:
+
+
+network.show_network()
+
+
+# In[ ]:
+
+
+print(1+True)
+
+
+# In[ ]:
+
+
+print(1+False)
+
+
+# In[13]:
+
+
+dot = Digraph()
+
+
+# In[14]:
+
+
+dot.node("kame",label="hame",fill="green")
+
+
+# In[3]:
+
+
+file = open('./log.txt')
+for i in file:
+    if "CRITICAL" in i:
+        print(i)
+
+
+# In[96]:
+
+
+a = dot.subgraph()
+
+
+# In[97]:
+
+
+
+
