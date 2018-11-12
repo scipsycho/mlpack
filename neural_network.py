@@ -6,35 +6,9 @@ import math
 
 logging.basicConfig(filename='./log.txt',level=logging.DEBUG)
 
-
-
-
-def sigmoid_bipolar(x):
-    return sigmoid_binary(x) - 0.5
-def sigmoid_binary(x):
-    return  1/(1 + math.e**(-x))
-def relu(x):
-    logging.debug("Relu({}) Called: returning {}".format(x,max(x,0)))
-    return max(0,x)
-
-def identity(x):
-    logging.debug("Identity({}) Called: returning {}".format(x,x))
-    return x
-
-def step(x,theta):
-    ret = 0
-    if x > theta:
-        ret = 1
-    elif x < theta:
-        ret = -1
-    else:
-        ret = 0
-    logging.debug("Step({},{}) Called: returning {}".format(x,theta,ret))
-
-
 class layer:
 
-    def __init__(self, num_nodes, next_num_nodes = 1, initial_weight = None, is_last = False, has_bias = False, actn_fxn = relu):
+    def __init__(self, num_nodes, actn_fxn, next_num_nodes = 1, initial_weight = None, is_last = False, has_bias = False):
 
         self.num_nodes = num_nodes
         self.actn_fxn  = actn_fxn
@@ -125,9 +99,10 @@ class layer:
                .format(self.num_nodes, self.next_num_nodes,self.weight_matrix))
 
 
+
 class n_ff_network:
 
-    def __init__(self, ff_layers, initial_weights = None, has_bias = None,actn_fxn = relu):
+    def __init__(self, ff_layers, initial_weights = None, has_bias = None, actn_fxn : str = 'relu'):
 
         self.ff_layers = list(np.array(ff_layers).flatten())
         self.num_layers = len(self.ff_layers)
@@ -138,11 +113,34 @@ class n_ff_network:
         
         self.n_layers = []
         
+        self.actn_fxns = {}
+        
+        #default activation functions
+        self.actn_fxns['relu'] = self.relu
+        self.actn_fxns['identity'] = self.identity
+        self.actn_fxns['step'] = self.step
+        self.actn_fxns['sigmoid_bin'] = self.sigmoid_binary
+        self.actn_fxns['sigmoid_bipo'] = self.sigmoid_bipolar
+        
+        #default activation function parameter
+        self.theta = 0
+        
+        try:
+            actn_fxn = self.actn_fxns[actn_fxn]
+        except KeyError:
+            logging.warning('{} Activation function not found. Using ReLu instead'.format(actn_fxn))
+            actn_fxn = self.actn_fxns['relu']
+            
+        #for future purposes
+        self.actn_fxn = actn_fxn
+        
         if has_bias is None:
             has_bias = [False for i in range(self.num_layers-1)]
         elif np.asarray(has_bias).flatten().shape != (self.num_layers-1,):
             logging.warning('has_bias is not of compatible size. Using default value')
             has_bias = [False for i in range(self.num_layers-1)]
+        
+        
         
         if isinstance(initial_weights,(type(None),int,float)):
             self.n_layers = [ layer(num_nodes = self.ff_layers[i], next_num_nodes= self.ff_layers[i+1],
@@ -165,10 +163,35 @@ class n_ff_network:
         #default learning algos
         self.learning_algos = {}
         self.learning_algos['hebb'] = self.hebb_learn
-        #self.learning_algos['perceptron'] = self.perceptron_learn
+        self.learning_algos['perceptron'] = self.perceptron_learn
         #self.learning_algos['delta'] = self.delta_learn
         #self.learning_algos['backprop'] = self.backprop
+        
+        
+        
+        
 
+    def identity(self,x):
+        return x
+    
+    def relu(self,x):
+        return max(0,x)
+    
+    def step(self,x):
+        
+        if x > self.theta:
+            return 1
+        elif x < self.theta:
+            return -1
+        else:
+            return 0
+    
+    def sigmoid_bipolar(self,x):
+        return self.sigmoid_binary(x) - 0.5
+    
+    def sigmoid_binary(self,x):
+        return  1/(1 + math.e**(-x))
+    
     def send(self, input_vector):
         
         #checking if the input layer of neural network accepts the input_vector as a valid input vector
@@ -210,7 +233,8 @@ class n_ff_network:
         dot.attr(rankdir='LR',ranksep='4')
         dot.node(name="input_layer", rank = 'sink',xlabel="Input Layer",label="", fontsize = '12',style="filled",color="green",fixedsize = 'true', shape="square",width="0.1")
         dot.node(name="output_layer", xlabel="Output Layer",label="", fontsize = '12',style="filled",color="red",fixedsize = 'true', shape="square",width="0.1")
-        dot.node(name="hidden_layers", xlabel="Hidden Layers",label="", fontsize = '12',style="filled",color="grey",fixedsize = 'true', shape="square",width="0.1")
+        if self.num_layers > 2:
+            dot.node(name="hidden_layers", xlabel="Hidden Layers",label="", fontsize = '12',style="filled",color="grey",fixedsize = 'true', shape="square",width="0.1")
         
         start = 0
         for i in range(self.num_layers):
@@ -248,8 +272,53 @@ class n_ff_network:
         #dot.render('./'+comment+'.png', view = True)
         dot.view()
         
+    def perceptron_learn(self, arg_dict):
+        
+        try:
+            output_vector = arg_dict['output_vector']
+        except KeyError:
+            logging.critical('output_vector argument not provided. Cannot Continue')
+            return None
+        
+        try:
+            learning_rate = arg_dict['learning_rate']
+        except KeyError:
+            logging.info('learning_rate argument not provided. Using default {} value'.format(1))
+            learning_rate = 1
+            
+        try:
+            self.theta = arg_dict['theta']
+        except KeyError:
+            logging.info('theta argument not provided. Using default {} value'.format(0))
+        
+        if self.actn_fxn != self.step:
+            logging.warning('Perceptron normally uses Step activation function. Currently using {} instead'.format(self.actn_fxn))
+        
+        if self.num_layers > 2:
+            logging.critical('Perceptron rule currently doesn\'t support more than two layers. Cannot Continue')
+            return None
+        
+        
+        if np.equal(output_vector, self.output_vector):
+            logging.debug('Actual and calcualted output equal. Skipping')
+            return True
+        
+        input_layer = self.n_layers[0]
+        for i in range(len(output_vector)):
+            output = output_vector[i]
+            for j in range(input_layer.num_nodes):
+                input_layer.weight_matrix[j][i] += learning_rate*output*self.input_vector[j]
+        
+        return True
+            
     def hebb_learn(self,arg_dict):
-        output_vector = arg_dict['output_vector']
+        
+        try:
+            output_vector = arg_dict['output_vector']
+        
+        except KeyError:
+            logging.critical('output_vector argument not provided. Cannot Continue')
+            return None
         
         #hebb only works when there are no hidden layers
         if self.num_layers > 2:
@@ -305,3 +374,4 @@ class n_ff_network:
                 self.learning_algos[learning_algo](xargs)
         
         
+
